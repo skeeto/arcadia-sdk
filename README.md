@@ -179,7 +179,7 @@ project(my_toy C)
 
 include(FetchContent)
 FetchContent_Declare(arcadia_sdk
-    GIT_REPOSITORY https://github.com/<you>/arcadia-toy-sdk.git
+    GIT_REPOSITORY https://github.com/skeeto/arcadia-sdk.git
     GIT_TAG        main)          # or a release tag
 FetchContent_MakeAvailable(arcadia_sdk)
 

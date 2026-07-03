@@ -8,7 +8,7 @@
 # As a dependency of your toy project (FetchContent):
 #   include(FetchContent)
 #   FetchContent_Declare(arcadia_sdk
-#       GIT_REPOSITORY https://github.com/<you>/arcadia-toy-sdk.git
+#       GIT_REPOSITORY https://github.com/skeeto/arcadia-sdk.git
 #       GIT_TAG        main)
 #   FetchContent_MakeAvailable(arcadia_sdk)
 #   add_arcadia_toy(mytoy NAME "MyToy" NUMBER 13 VERSION "0.0001" SOURCES mytoy.c)
