@@ -32,9 +32,9 @@ No MFC and no Arcadia import library are needed — a toy is plain C.
 
 ## Requirements
 
-* A **32-bit** Windows C toolchain. Arcadia and every toy are `pei-i386`, so
-  toys must be 32-bit too. This repo is set up for **i686-w64-mingw32**
-  (w32devkit); MSVC `/MACHINE:X86` also works.
+* [w64devkit][] (x86), or any **32-bit** Windows C toolchain. Arcadia and
+  every toy are `pei-i386`, so toys must be 32-bit too. This repo is set
+  up for **i686-w64-mingw32**.
 * **CMake ≥ 3.16** and a generator (Ninja or Make).
 
 ## Quickstart
@@ -245,3 +245,4 @@ that speaks it. Use it to make toys, not to redistribute the host.
 
 
 [Arcadia]: http://www.synthetic-reality.com/arcadia.htm
+[w64devkit]: https://github.com/skeeto/w64devkit
