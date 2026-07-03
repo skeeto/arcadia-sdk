@@ -368,6 +368,19 @@ though a single fast click can fall between 32 Hz samples. The host DIB-surface
 API (0x29/0x30/0x2d/0x32/…) remains available for palette-perfect compositing
 but is optional.
 
+**OpenGL (verified live).** The host composites 8-bit DIBs with GDI, so you
+cannot get *accelerated* GL into any DC it provides (`PFD_DRAW_TO_BITMAP` is the
+software rasterizer). The working path is your own **child window** over the
+canvas `HWND`: `CreateWindowEx(WS_CHILD, …, parent=canvas)`, give it a
+`PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER` pixel format,
+`wglCreateContext`, render on the tick, `SwapBuffers`. This is fully
+GPU-accelerated and independent of the host palette; it does not touch the
+host's window pixel format. Track `GetClientRect(canvas)` from `tick` and
+`MoveWindow` + `glViewport` on change to follow resizes. Leave the `paint`
+callback unset so the SDK's GDI double-buffer stays out of the way. Working
+example: `samples/glcube` (a spinning, resize-aware GL 1.1 cube — tested
+loading and rendering in Arcadia).
+
 **Input.** The shipped toys **poll**: `GetAsyncKeyState` for keys and
 `GetCursorPos` + `ScreenToClient` for the mouse (with `SetCapture`/`PtInRect`
 for hit-testing), all against the canvas `HWND`. Do the same from your `tick`

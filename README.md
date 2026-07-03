@@ -16,7 +16,8 @@ talks to the host through a single dispatch callback. This SDK gives you:
   the `toy.ini` / `version.ini` and the installable folder layout;
 * a fully reverse-engineered **ABI reference** (`docs/ABI.md`) and the RE
   scripts used to recover it (`re/`);
-* a working **sample toy** (`samples/hello`).
+* working **sample toys** — `samples/hello` (2-D GDI, chat, live networking) and
+  `samples/glcube` (a hardware-accelerated OpenGL cube in a child window).
 
 No MFC and no Arcadia import library are needed — a toy is plain C.
 
@@ -217,7 +218,8 @@ sdk/
     ArcadiaToy.cmake        add_arcadia_toy(), runtime target
     toolchain-i686-w64-mingw32.cmake
     toy.ini.in, version.ini.in
-  samples/hello/            sample toy + template CMakeLists
+  samples/hello/            2-D GDI sample + template CMakeLists
+  samples/glcube/           OpenGL cube in a child GL window (resize-aware)
   docs/ABI.md               reverse-engineered binary spec
   re/                       RE tooling (capstone/pefile) + raw evidence
 ```
