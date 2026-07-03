@@ -59,8 +59,11 @@ typedef struct ArPlayerInfo {
 typedef struct ArToy {
     const char *name;   /* optional: for logging */
 
-    /* Lifecycle */
-    int  (*open)(ArContext *ctx, HWND hwnd);      /* MPOpenOffer: session start */
+    /* Lifecycle.
+     *   open: session start. `offer` is the host's raw session descriptor
+     *         (MPOpenOffer's struct arg) — valid ONLY during this call, layout
+     *         only partially mapped (see ABI.md §7); most toys can ignore it. */
+    int  (*open)(ArContext *ctx, HWND hwnd, void *offer);  /* MPOpenOffer */
     void (*close)(ArContext *ctx);                /* MPCloseOffer: session end  */
     void (*tick)(ArContext *ctx, unsigned now_ms);/* per-frame update (~32 Hz)  */
 
@@ -139,9 +142,15 @@ int  ar_store_read(int id, void *buf, int cap);                  /* sel 0x25  [V
 int  ar_reg_set(const char *name, const void *val, int type_or_len); /* sel 0x22 [V] */
 int  ar_reg_get(const char *name, void *out, int cap, int type);     /* sel 0x23 [V] */
 
-/* Off-screen 8-bit DIB surfaces */
-int  ar_surface_create(int a, int b, int c);                     /* sel 0x29  [V] */
+/* Off-screen 8-bit DIB surfaces.
+ * create builds a `width`x`height` DIB (flags reserved, pass 0) and returns a
+ * handle (or -1). load/save read/write image files; fill memsets the bits. */
+int  ar_surface_create(int width, int height, int flags);        /* sel 0x29  [V] */
 void ar_surface_destroy(int h);                                  /* sel 0x2a  [V] */
+int  ar_surface_load(int h, const char *file);                   /* sel 0x2b  [I] */
+void ar_surface_fill(int h, int byte_value);                     /* sel 0x2c  [V] */
+int  ar_surface_save(int h, const char *file, int format);       /* sel 0x34  [I] */
+void ar_surface_blit_ex(int dst, int src, int a3, int a4, int a5, int a6); /* 0x41 [?] */
 int  ar_surface_valid(int h);                                    /* sel 0x33  [V] */
 int  ar_surface_pitch(int h);                                    /* sel 0x37  [V] */
 void*ar_surface_pixel_addr(int h, int x, int y);                 /* sel 0x32  [V] */
@@ -163,7 +172,18 @@ void ar_surface_blit_rect(int dst, int src, int p3, int p4);     /* sel 0x2f  [V
  *             you sync via serialize() rather than ar_send (selector 0x49). */
 void ar_send(int channel, const void *data, int len);            /* sel 0x0f  [V] */
 void ar_flush(void);                                             /* sel 0x49  [V] */
-int  ar_channel_ctl(int op, int arg2, int channel);              /* sel 0x09  [I] */
+
+/* Audio (selector 0x09). Reference sounds by bare filename; the host resolves
+ * them against your toy folder (put .wav in sfx/, .mid in midi/, like the
+ * shipped toys). ar_play_sound plays a sound effect, ar_play_music a MIDI
+ * tune, ar_stop_sounds silences all effects. */
+void ar_play_sound(const char *name);                            /* sel 0x09/1 [I] */
+void ar_play_music(const char *name);                            /* sel 0x09/2 [I] */
+void ar_stop_sounds(void);                                       /* sel 0x09/4 [I] */
+
+/* The host session descriptor captured at open() (same pointer passed to your
+ * open callback). Only meaningful/valid during open(); layout partial. */
+void *ar_offer(void);
 
 /* Timing */
 void ar_mark_time(void);                                         /* sel 0x4a  [V] */

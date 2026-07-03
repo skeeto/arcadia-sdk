@@ -18,10 +18,12 @@ static int   s_got_peer = 0;
 
 #define NET_CHANNEL 0              /* broadcast channel for ar_send/packet */
 
-static int on_open(ArContext *ctx, HWND hwnd)
+static int on_open(ArContext *ctx, HWND hwnd, void *offer)
 {
-    (void)ctx; (void)hwnd;
+    (void)ctx; (void)hwnd; (void)offer;
     ar_print("hello: the SDK sample toy is up. Type and it echoes over the net.");
+    /* Audio example (needs a sfx/ folder with the .wav next to the toy):
+     *   ar_play_sound("ding.wav"); */
     s_last = GetTickCount();
     return 0; /* success */
 }

@@ -39,7 +39,7 @@ static int ar_ged_calls;   /* global call counter, to cap trace volume */
  * stack, so passing extra zero args is always safe. */
 typedef int (__cdecl *ar_dispatch_t)(int, int, int, int, int, int, int, int, int);
 
-struct ArContext { HWND hwnd; };
+struct ArContext { HWND hwnd; void *offer; };
 
 static ar_dispatch_t g_dispatch = 0;
 static struct ArContext g_ctx = { 0 };
@@ -187,8 +187,24 @@ int  ar_reg_get(const char *name, void *out, int cap, int type)
     return ar_host(0x23, (int)(INT_PTR)name, (int)(INT_PTR)out, cap, type, 0, 0);
 }
 
-int  ar_surface_create(int a, int b, int c) { return ar_host(0x29, a, b, c, 0, 0, 0); }
+int  ar_surface_create(int width, int height, int flags)
+{
+    return ar_host(0x29, width, height, flags, 0, 0, 0);
+}
 void ar_surface_destroy(int h)              { ar_host(0x2a, h, 0, 0, 0, 0, 0); }
+int  ar_surface_load(int h, const char *file)
+{
+    return ar_host(0x2b, h, (int)(INT_PTR)file, 0, 0, 0, 0);
+}
+void ar_surface_fill(int h, int byte_value) { ar_host(0x2c, h, byte_value, 0, 0, 0, 0); }
+int  ar_surface_save(int h, const char *file, int format)
+{
+    return ar_host(0x34, h, (int)(INT_PTR)file, format, 0, 0, 0);
+}
+void ar_surface_blit_ex(int dst, int src, int a3, int a4, int a5, int a6)
+{
+    if (g_dispatch) g_dispatch(0x41, dst, src, a3, a4, a5, a6, 0, 0);
+}
 int  ar_surface_valid(int h)                { return ar_host(0x33, h, 0, 0, 0, 0, 0); }
 int  ar_surface_pitch(int h)                { return ar_host(0x37, h, 0, 0, 0, 0, 0); }
 void*ar_surface_pixel_addr(int h, int x, int y)
@@ -220,10 +236,14 @@ void ar_send(int channel, const void *data, int len)
     ar_host(0x0f, (int)(INT_PTR)data, len, channel, 0, 0, 0);
 }
 void ar_flush(void) { ar_host(0x49, 0, 0, 0, 0, 0, 0); }
-int  ar_channel_ctl(int op, int arg2, int channel)
-{
-    return ar_host(0x09, op, arg2, channel, 0, 0, 0);
-}
+
+/* Audio — selector 0x09 subcommands (name = bare filename). */
+void ar_play_sound(const char *name) { ar_host(0x09, 1, 0, (int)(INT_PTR)name, 0, 0, 0); }
+void ar_play_music(const char *name) { ar_host(0x09, 2, 0, (int)(INT_PTR)name, 0, 0, 0); }
+void ar_stop_sounds(void)            { ar_host(0x09, 4, 0, 0, 0, 0, 0); }
+
+void *ar_offer(void) { return g_ctx.offer; }
+
 void ar_mark_time(void) { ar_host(0x4a, 0, 0, 0, 0, 0, 0); }
 
 BOOL ar_key_down(int vk)
@@ -279,8 +299,12 @@ int MPOpenOffer(int a1, int a2, int a3, int a4, int a5, int a6)
         if (IsWindow((HWND)(INT_PTR)args[i])) { g_ctx.hwnd = (HWND)(INT_PTR)args[i]; break; }
     }
     AR_TRACE("MPOpenOffer chosen hwnd=%p (arg index %d)", (void*)g_ctx.hwnd, i < 6 ? i : -1);
-    if (g_toy.open) rc = g_toy.open(&g_ctx, g_ctx.hwnd);
+    /* The offer descriptor is arg2 (the struct the shipped toys inspect). It
+     * points into the host's stack frame, so it is only valid during this call. */
+    g_ctx.offer = (void *)(INT_PTR)a2;
+    if (g_toy.open) rc = g_toy.open(&g_ctx, g_ctx.hwnd, g_ctx.offer);
     AR_TRACE("MPOpenOffer open()->%d", rc);
+    g_ctx.offer = 0;   /* invalidate: pointer is not valid after open() returns */
     return rc;
 }
 

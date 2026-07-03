@@ -129,10 +129,21 @@ add_arcadia_toy(mytoy
 | `ged`           | every host event, first             | raw escape hatch |
 
 Everything else is a normal function you can call anytime the session is open:
-`ar_print` (chat), `ar_send`/`ar_flush` (networking), `ar_local_player_id`,
+`ar_print` (chat), `ar_send`/`ar_flush` (networking), `ar_play_sound`/
+`ar_play_music`/`ar_stop_sounds` (audio), `ar_local_player_id`,
 `ar_get_player_info`, `ar_store_read/write`, `ar_reg_get/set`, the
-`ar_surface_*` family, `ar_key_down`, `ar_mouse`, and the raw
-`ar_host(selector, …)`. See `include/arcadia/toy.h` and `docs/ABI.md`.
+`ar_surface_*` family (create/load/fill/save/blit/pixels), `ar_key_down`,
+`ar_mouse`, and the raw `ar_host(selector, …)`. See `include/arcadia/toy.h`
+and `docs/ABI.md`.
+
+**Text & fonts.** There's no text helper by design — draw with GDI on the paint
+DC. You can use Arcadia's own faces for free: the host registers `Castellar`
+(via `AddFontResource`) and `Verdana` is a system font, both available to your
+toy's `CreateFont`/`TextOut`. Details in `docs/ABI.md` §8.
+
+**Audio & assets.** Put `.wav` files in your toy's `sfx/` folder and `.mid` in
+`midi/` (like the shipped toys), then `ar_play_sound("thing.wav")` — the host
+resolves names against your toy folder. See `docs/ABI.md` §7.
 
 **Networking in one paragraph.** For discrete events (a move, a shot), call
 `ar_send(channel, data, len)` — every peer gets it via your `packet()` callback.

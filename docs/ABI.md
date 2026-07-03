@@ -148,10 +148,10 @@ dispatch). The host calls it for many events with `code` in `2..0x14`
 | 0xd  | `0x1bb4b` | **Player-entered** notification (emitted next to `"* %s has entered"` / `gong.wav`) — *not* a periodic tick (corrected by live trace). **[V]** |
 | 0xe  | `0x2555b` | Incoming chat/system line for a channel (`code, chan, p1, p2, p3`). **[I]** |
 | 0xf  | `0x28c8f`,`0x28e9f` | Player action/roster event; carries `(localId, name, val, val)` (host passes a player name, e.g. `"Biggles"`). **[I]** |
-| 0x10 | `0x28ab8` | Roster/state update. **[?]** |
-| 0x11 | `0xa2a6` | Activation/focus/enable toggle (boolean-ish arg). **[?]** |
-| 0x13 | `0x2602e` | (decoded partially). **[?]** |
-| 0x14 | `0xaa20`  | (decoded partially). **[?]** |
+| 0x10 | `0x28ab8` | Player/name update (follows a `sub_dccd` name format; carries player + string). **[I]** |
+| 0x11 | `0xa2a6` | Activation/focus/enable toggle (single boolean-ish arg). **[I]** |
+| 0x13 | `0x2602e` | **Bulk list update**: `(code, count+1, count, int[]  , 0)` — the host hands the toy an array of values with a count. **[I]** |
+| 0x14 | `0xaa20`  | **Session reset/clear** (all-zero args; host zeroes its `0x45efb4..bc` state alongside). **[I]** |
 
 The reference billiards toy only implements codes 2, 6, 0xb, 0xc, 0xd
 meaningfully (`code-2` jump table indices `[0,5,5,5,1,5,5,5,5,2,3,4]`); all
@@ -209,10 +209,10 @@ object wrapping an 8-bit DIB (fields: `+4` DIB/bitmap, `+8` bits pointer,
 
 | sel | args | name | meaning |
 |----:|------|------|---------|
-| 0x29 | 3 | `ar_surface_create` | allocate a surface object, return its handle (slot) or −1. **[V]** |
+| 0x29 | 3 (w,h,flags) | `ar_surface_create` | allocate a `w`×`h` 8-bit DIB surface (`sub_1d6d0` builds a `BITMAPINFOHEADER`: `+0`=0x28, `+4`=w, `+8`=h); returns handle (slot) or −1. **[V]** |
 | 0x2a | 1 | `ar_surface_destroy` | free a surface handle. **[V]** |
-| 0x2b | 2 | `ar_surface_load`   | (op with a pointer arg; e.g. load bits). **[?]** |
-| 0x2c | 2 | `ar_surface_op2`    | second load/op variant. **[?]** |
+| 0x2b | 2 (h,file) | `ar_surface_load` | load an image file (CString path, `sub_1d870`) into the surface. **[I]** |
+| 0x2c | 2 (h,byte) | `ar_surface_fill` | fill the surface bits with a byte value — `memset(bits, byte, height*pitch)` (`sub_1d820`). **[V]** |
 | 0x2d | 8 | `ar_surface_blit`   | blit `src`→`dst` `(dst,src,x,y,w,h,a7,a8)`; `a7==a8==0` uses fast path (vtbl `+0x18`). **[V]** |
 | 0x2e | 4 | `ar_surface_blit_to_dc` | blit surface `h` to a **raw HDC** you own `(h, hdc, x, y)` (host wraps hdc via MFC `sub_49e3a`). **[V]** |
 | 0x2f | 4 | `ar_surface_blit_rect`  | blit `(dst,src,p3,p4)` via vtbl `+0x24`. **[V]** |
@@ -220,7 +220,7 @@ object wrapping an 8-bit DIB (fields: `+4` DIB/bitmap, `+8` bits pointer,
 | 0x31 | 3 | `ar_surface_get_size` | writes width/height through the two out-pointers. **[I]** |
 | 0x32 | 3 | `ar_surface_pixel_addr` | returns address of pixel `(x,y)` in the DIB bits (bottom-up 8bpp, `stride=(w+3)&~3`). Direct pixel poking. **[V]** |
 | 0x33 | 1 | `ar_surface_valid`  | 1 if the surface has bits, else 0. **[V]** |
-| 0x34 | 3 | `ar_surface_setmode`| set a mode flag (`sub_1d9a0`, arg→2 or 3). **[?]** |
+| 0x34 | 3 (h,file,fmt) | `ar_surface_save` | write the surface to an image file (CString path, format flag; `sub_1d9a0`). **[I]** |
 | 0x35 | 1 | `ar_surface_bits`   | returns `[+4]` (DIB struct / base). **[I]** |
 | 0x36 | 1 | `ar_surface_field8` | returns `[+8]` (bits pointer). **[I]** |
 | 0x37 | 1 | `ar_surface_pitch`  | returns row stride `((w)+3)&~3`. **[V]** |
@@ -232,10 +232,10 @@ object wrapping an 8-bit DIB (fields: `+4` DIB/bitmap, `+8` bits pointer,
 |----:|------|------|---------|
 | 0x0e | 3 (flags,text,chan) | `ar_print` | **Post a text line to the chat window** via `sub_92b4`→`sub_dfef` (the chat control at `[0x458794]+0x13c`). `flags=0,chan=0` = plain line on the current channel. Confirmed live. **[V]** |
 | 0x0f | 3 (data,len,chan) | `ar_send` | **Broadcast `len` bytes of `data` to peers on `chan`** as net message type `0x67` (`sub_17aa3`→`sub_1c083`); peers get it via `MPIncomingPacket(chan,data,len)`. Payload is RLE+escape coded (`sub_1798c`, §3.2) — **binary-safe**. The main discrete-message path (synSpades/synRTS/TTPool). **[V]** |
-| 0x09 | 3 | `ar_channel_ctl`   | sub-op `arg1∈{1,2,4,5,6}` = join/leave/reset channel `arg3`. **[I]** |
+| 0x09 | 3 (sub,_,name) | `ar_play_sound`/`ar_play_music`/`ar_stop_sounds` | **audio.** Sub-op `arg1`: 1 = play sfx `arg3` (`sub_250d5`→`sub_2504f` name cache + `sub_24e52` play), 2/6 = MIDI music (`sub_246dd`), 4 = stop all (`sub_250fa`), 5 = sfx variant. `arg3` is a bare filename resolved against the toy folder (shipped toys keep .wav in `sfx/`, .mid in `midi/`). **[I]** |
 | 0x21 | 2 | `ar_post_command`  | `arg1==1` → `PostMessage(mainwnd, WM_COMMAND=0x111, 0x800f, 0)`; else `sub_19b76(arg2)`. **[I]** |
-| 0x39 | 3 | `ar_draw_text`     | draw text with font `arg1&3` (font table at `0x469758`, stride `0x14`). **[I]** |
-| 0x38 | 5 | `ar_play_sound`    | `sub_2556e(1, a1, a2, &g, a4, a5)` — sound/asset trigger. **[?]** |
+| 0x39 | 3 | (timed-text ticker) | **NOT general text draw.** `sub_dccd` pushes a ≤15-char, time-stamped string onto one of 4 "font-channel" queues (the `0x469758` table) — the host's scrolling/floating-notice ticker. For normal text, draw with GDI (§8). **[V]** |
+| 0x38 | 5 (_,_,player,…) | (targeted send) | **NOT audio.** `sub_2556e` looks up the target player's network address (player-table `+0x38/+0x3c`) and sends via `sub_2d84c` — a unicast counterpart to `0x0f` broadcast. Args partially mapped. **[I]** |
 | 0x3d | 5 | `ar_surface_player`| associate a surface with a player/avatar. **[?]** |
 | 0x3f | 5 | `ar_draw_prim0`    | `sub_319a(0, …)` drawing primitive. **[?]** |
 | 0x40 | 3 | `ar_draw_prim1`    | `sub_319a(1, a1, a2, 0x180, 0x100, 0, a3)`. **[?]** |
@@ -401,3 +401,42 @@ Regenerate the raw evidence:
 sdk/re/.venv/Scripts/python sdk/re/tools/dump_handlers.py > sdk/re/out/handlers.txt
 sdk/re/.venv/Scripts/python sdk/re/tools/scan_host.py Toys/toy3/MPChess.dll sites
 ```
+
+## 7. Session offer, bots & assets
+
+**The offer descriptor.** `MPOpenOffer` hands the toy a pointer to a session
+descriptor (arg2 — the struct the shipped toys read). It lives in the host's
+stack frame, so it is **only valid during the `MPOpenOffer` call** — copy out
+anything you need. Layout is only partially mapped: `+0x0c` is a config dword
+and `+0x38` is a path-ish string (TTPool copies it and `strrchr`'s it for `\`).
+The SDK exposes it raw as the third argument to `open()` / `ar_offer()` for
+toys that want to experiment; most can ignore it. **[I]**
+
+**Bots.** There is **no host bot/AI API**. What looks like "add bot" in the
+shipped toys (e.g. TTPool building an `'S'`+index record and calling `0x0f`) is
+just an ordinary broadcast of a game message. Bots, if a toy wants them, are
+simulated by the toy itself — extra local entities it draws and, if networked,
+syncs like any other state. **[V]**
+
+**Asset paths.** Toys reference their own files (sounds, art, models) by name;
+the host resolves them relative to the toy's folder (see the shipped toys'
+`sfx/`, `midi/`, `art/`, `Models/` subfolders). Arcadia's working directory is
+the install root, and your toy lives at `Toys/toy<N>/`. To locate your own
+folder explicitly, call `GetModuleFileName` with your DLL's `HINSTANCE`
+(captured in `DllMain`) and strip the filename — standard Win32, no SDK helper
+needed.
+
+## 8. Text & fonts
+
+There is no general text-draw selector (`0x39` is the timed-text ticker, §3).
+Draw text yourself with GDI on the paint DC — and you can use Arcadia's own
+typefaces for free: at startup the host **registers `castelar.ttf` with
+`AddFontResourceA`** (`sub_26ce9`: it `EnumFontFamilies` for `"Castellar"` and,
+if absent, adds the file from the install dir), and `"Verdana"` is a stock
+system font. `AddFontResource` publishes a family **process-wide**, and your toy
+DLL runs inside the Arcadia process — so `CreateFontA(…, "Castellar")` /
+`CreateFontA(…, "Verdana")`, `SelectObject` into the DC, `SetTextColor` /
+`SetBkMode(TRANSPARENT)`, then `TextOutA`/`ExtTextOutA` renders in the host's
+exact fonts. Measure with `GetTextExtentPoint32` for layout. To ship your own
+face, bundle a `.ttf` and `AddFontResourceEx` it in `open()`
+(`RemoveFontResourceEx` in `close()`). **[V]**
