@@ -381,6 +381,32 @@ callback unset so the SDK's GDI double-buffer stays out of the way. Working
 example: `samples/glcube` (a spinning, resize-aware GL 1.1 cube — tested
 loading and rendering in Arcadia).
 
+> **Known issue — GL context stalls the host main thread on modern Windows.**
+> On Windows 10/11, *having a live GL context in the process* makes Arcadia's
+> main-thread tick hitch for ~150–200 ms roughly every 2 s. Measured
+> conclusively:
+>
+> * It is **not** rendering: a context created on a hidden 8×8 off-screen
+>   window that never draws and never `SwapBuffers` still triggers it (7 hitches
+>   / 400 host ticks).
+> * It is **not** timer resolution: `timeBeginPeriod(1)` does not reduce it
+>   (still 6 hitches / 400 ticks, same 125–204 ms magnitude).
+> * It is the **vendor ICD / GPU-driver + DWM engagement** at context creation.
+>   It persists for the rest of the session (the driver stays resident) and so
+>   affects the host chat UI and *any other, non-GL toy loaded afterwards in the
+>   same session* — matching that `synPool`/`synSpace` also hitch once the GL
+>   toy has been loaded.
+> * **Windows XP is immune** (no DWM): zero hitches there.
+>
+> The hitch is on the **host** thread, not yours. If you render on your **own
+> thread** (see the threaded variant discussed in `re/` notes) your GL content
+> stays smooth through the host's hitches — that's the recommended design for a
+> GL toy. What you cannot do from a toy is stop the host thread itself from
+> hitching while a GL context is alive. To avoid engaging the GPU driver at all
+> (at a performance cost), a **software GL** (e.g. Mesa `llvmpipe`/`osmesa`)
+> would not load the vendor ICD and is the escape hatch worth testing for a
+> mostly-2-D GLES-style runtime.
+
 **Input.** The shipped toys **poll**: `GetAsyncKeyState` for keys and
 `GetCursorPos` + `ScreenToClient` for the mouse (with `SetCapture`/`PtInRect`
 for hit-testing), all against the canvas `HWND`. Do the same from your `tick`

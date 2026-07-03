@@ -28,3 +28,6 @@ Sr3d.dll
 *.swp
 Thumbs.db
 desktop.ini
+
+# editor/ctags
+tags
