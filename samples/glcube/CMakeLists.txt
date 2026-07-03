@@ -13,9 +13,9 @@ add_arcadia_toy(glcube
     NAME     "GL Cube"
     NUMBER   14                  # its own toy folder (toy14); 1-12 are official
     DLL      glcube.dll          # avoid a space in the DLL filename
-    DESC     "Spinning OpenGL cube"
+    DESC     "Spinning OpenGL cube (drag to rotate)"
     VERSION  "0.0001"
     SOURCES  glcube.c
     LONGDESC "A hardware-accelerated OpenGL cube in a child window over the Arcadia canvas."
 )
-target_link_libraries(glcube PRIVATE opengl32)
+target_link_libraries(glcube PRIVATE opengl32 winmm)

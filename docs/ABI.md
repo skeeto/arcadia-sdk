@@ -399,9 +399,8 @@ loading and rendering in Arcadia).
 > * **Windows XP is immune** (no DWM): zero hitches there.
 >
 > The hitch is on the **host** thread, not yours. If you render on your **own
-> thread** (see the threaded variant discussed in `re/` notes) your GL content
-> stays smooth through the host's hitches — that's the recommended design for a
-> GL toy. What you cannot do from a toy is stop the host thread itself from
+> thread** (as `samples/glcube` does) your GL content stays smooth through the
+> host's hitches — that's the recommended design for a GL toy. What you cannot do from a toy is stop the host thread itself from
 > hitching while a GL context is alive. To avoid engaging the GPU driver at all
 > (at a performance cost), a **software GL** (e.g. Mesa `llvmpipe`/`osmesa`)
 > would not load the vendor ICD and is the escape hatch worth testing for a

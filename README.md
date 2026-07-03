@@ -221,7 +221,7 @@ sdk/
     toolchain-i686-w64-mingw32.cmake
     toy.ini.in, version.ini.in
   samples/hello/            2-D GDI sample + template CMakeLists
-  samples/glcube/           OpenGL cube in a child GL window (resize-aware)
+  samples/glcube/           OpenGL cube in a child GL window (threaded, drag to rotate)
   docs/ABI.md               reverse-engineered binary spec
   re/                       RE tooling (capstone/pefile) + raw evidence
 ```

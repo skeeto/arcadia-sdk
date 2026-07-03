@@ -5,24 +5,40 @@
  * GL *into* the DC it hands you. Instead this toy creates its own child window
  * over the Arcadia canvas, gives that child an OpenGL pixel format, and renders
  * to it directly with SwapBuffers — fully GPU-accelerated and independent of the
- * host's palette/compositing. It resizes with the Arcadia window.
+ * host's palette/compositing. It resizes with the Arcadia window and rotates
+ * under the mouse.
  *
  * It uses OpenGL 1.1 fixed-function (immediate mode), so there is no shader or
  * extension-loading boilerplate — just wgl + glBegin/glEnd. Link opengl32.
  *
- * Note: it leaves the SDK's paint() callback unset, so the SDK's GDI
- * double-buffer stays out of the way; rendering is driven entirely from tick().
+ * WHY A RENDER THREAD.  On modern Windows (10/11), simply having a live GL
+ * context in the process makes the host's main-thread tick hitch for
+ * ~150-200 ms every couple of seconds — the vendor GL driver / DWM engaging
+ * (see docs/ABI.md, "GL context stalls the host main thread"). If we rendered
+ * from tick() we would inherit that hitch. Rendering on our own thread decouples
+ * the animation from the host's tick, so the cube stays smooth through the
+ * host's hitches. We also raise the timer resolution (timeBeginPeriod) so a
+ * Sleep(16) loop actually lands near 60 fps instead of the default ~64 Hz.
+ * (This does not cure the host-side hitch — nothing a toy does can — it only
+ * keeps *our* rendering smooth.)
+ *
+ * INPUT.  Arcadia doesn't route input to toys; toys poll global state. ar_mouse()
+ * is GetCursorPos + ScreenToClient(canvas) + GetAsyncKeyState for the buttons,
+ * and ar_key_down() is GetAsyncKeyState — none of which go through window
+ * messages. So our topmost child GL window does NOT intercept input: dragging
+ * with the left button rotates the cube even though the GL window is the window
+ * physically under the cursor. Polling is also thread-agnostic, so we sample it
+ * straight from the render thread.
  */
 #include <arcadia/toy.h>
 #include <GL/gl.h>
+#include <mmsystem.h>            /* timeBeginPeriod/timeEndPeriod (link winmm) */
 
 static const char GL_CLASS[] = "ArcadiaGLChildWindow";
 
-static HWND   s_glwnd;         /* our child window over the canvas */
-static HDC    s_gldc;          /* its device context               */
-static HGLRC  s_glrc;          /* the OpenGL rendering context      */
-static int    s_w, s_h;        /* current child size                */
-static float  s_angle;         /* cube rotation                     */
+static HWND           s_glwnd;   /* our child window over the canvas */
+static HANDLE         s_thread;  /* the render thread                */
+static volatile LONG  s_run;     /* render loop keep-going flag      */
 
 /* This DLL's own module handle, for RegisterClass/CreateWindow. */
 static HINSTANCE self_instance(void)
@@ -54,53 +70,6 @@ static void set_viewport(int w, int h)
     glMatrixMode(GL_MODELVIEW);
 }
 
-static int on_open(ArContext *ctx, HWND canvas, void *offer)
-{
-    HINSTANCE hi = self_instance();
-    WNDCLASSA wc;
-    RECT rc;
-    PIXELFORMATDESCRIPTOR pfd;
-    int pf;
-    (void)ctx; (void)offer;
-
-    /* Register our child window class once (ignore "already registered"). */
-    ZeroMemory(&wc, sizeof wc);
-    wc.style         = CS_OWNDC;                 /* stable DC — nice for GL */
-    wc.lpfnWndProc   = gl_wndproc;
-    wc.hInstance     = hi;
-    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-    wc.lpszClassName = GL_CLASS;
-    RegisterClassA(&wc);
-
-    if (!canvas || !GetClientRect(canvas, &rc)) return 1;   /* nonzero = decline */
-    s_w = rc.right; s_h = rc.bottom;
-
-    s_glwnd = CreateWindowExA(0, GL_CLASS, "", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-                              0, 0, s_w, s_h, canvas, NULL, hi, NULL);
-    if (!s_glwnd) return 1;
-    s_gldc = GetDC(s_glwnd);
-
-    ZeroMemory(&pfd, sizeof pfd);
-    pfd.nSize      = sizeof pfd;
-    pfd.nVersion   = 1;
-    pfd.dwFlags    = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-    pfd.iPixelType = PFD_TYPE_RGBA;
-    pfd.cColorBits = 24;
-    pfd.cDepthBits = 16;
-    pf = ChoosePixelFormat(s_gldc, &pfd);
-    if (!pf || !SetPixelFormat(s_gldc, pf, &pfd)) return 1;
-
-    s_glrc = wglCreateContext(s_gldc);
-    if (!s_glrc) return 1;
-    wglMakeCurrent(s_gldc, s_glrc);
-
-    glEnable(GL_DEPTH_TEST);
-    set_viewport(s_w, s_h);
-
-    ar_print("glcube: OpenGL child window is up.");
-    return 0;
-}
-
 static void draw_cube(void)
 {
     static const GLfloat v[8][3] = {
@@ -123,49 +92,124 @@ static void draw_cube(void)
     glEnd();
 }
 
-static void on_tick(ArContext *ctx, unsigned now_ms)
+/* Owns the GL context for its whole lifetime (a context is current per-thread),
+ * and drives animation independently of the host tick. `param` is the canvas. */
+static DWORD WINAPI render_thread(LPVOID param)
 {
-    HWND canvas = ar_window();
-    RECT rc;
-    (void)ctx; (void)now_ms;
+    HWND canvas = (HWND)param;
+    HDC  dc = GetDC(s_glwnd);
+    PIXELFORMATDESCRIPTOR pfd;
+    int  pf;
+    HGLRC rc;
+    int   w = 0, h = 0;
+    float yaw = 0.0f, pitch = 20.0f;   /* current orientation (degrees) */
+    int   dragging = 0, lastx = 0, lasty = 0;
 
-    if (!s_glrc || !canvas) return;
+    ZeroMemory(&pfd, sizeof pfd);
+    pfd.nSize      = sizeof pfd;
+    pfd.nVersion   = 1;
+    pfd.dwFlags    = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 24;
+    pfd.cDepthBits = 16;
+    pf = ChoosePixelFormat(dc, &pfd);
+    if (!pf || !SetPixelFormat(dc, pf, &pfd)) { ReleaseDC(s_glwnd, dc); return 1; }
+    rc = wglCreateContext(dc);
+    if (!rc) { ReleaseDC(s_glwnd, dc); return 1; }
+    wglMakeCurrent(dc, rc);
+    glEnable(GL_DEPTH_TEST);
 
-    /* Track the Arcadia canvas size. */
-    if (GetClientRect(canvas, &rc) && (rc.right != s_w || rc.bottom != s_h)) {
-        s_w = rc.right; s_h = rc.bottom;
-        MoveWindow(s_glwnd, 0, 0, s_w, s_h, FALSE);
-        set_viewport(s_w, s_h);
+    timeBeginPeriod(1);          /* so Sleep(16) actually approximates 60 fps */
+
+    while (s_run) {
+        RECT r;
+        int mx, my, buttons;
+
+        /* Follow the Arcadia canvas size. SWP_ASYNCWINDOWPOS so we never block
+         * on the host's (possibly hitching) main thread. */
+        if (canvas && GetClientRect(canvas, &r) && (r.right != w || r.bottom != h)) {
+            w = r.right; h = r.bottom;
+            SetWindowPos(s_glwnd, NULL, 0, 0, w, h,
+                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            set_viewport(w, h);
+        }
+
+        /* Drag with the left button to rotate; idle-spin otherwise. This reads
+         * the mouse straight through the GL overlay via polling (see header). */
+        buttons = ar_mouse(&mx, &my);
+        if (buttons & AR_MOUSE_L) {
+            if (dragging) { yaw += (mx - lastx) * 0.4f; pitch += (my - lasty) * 0.4f; }
+            dragging = 1; lastx = mx; lasty = my;
+        } else {
+            dragging = 0;
+            yaw += 0.8f;                       /* gentle auto-spin when idle */
+        }
+
+        glClearColor(0.06f, 0.09f, 0.18f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glLoadIdentity();
+        glTranslatef(0.0f, 0.0f, -5.0f);
+        glRotatef(pitch, 1.0f, 0.0f, 0.0f);
+        glRotatef(yaw,   0.0f, 1.0f, 0.0f);
+        draw_cube();
+        SwapBuffers(dc);
+
+        Sleep(16);
     }
 
-    s_angle += 1.5f;
+    timeEndPeriod(1);
+    wglMakeCurrent(NULL, NULL);
+    wglDeleteContext(rc);
+    ReleaseDC(s_glwnd, dc);
+    return 0;
+}
 
-    glClearColor(0.06f, 0.09f, 0.18f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glLoadIdentity();
-    glTranslatef(0.0f, 0.0f, -5.0f);
-    glRotatef(s_angle,        1.0f, 0.0f, 0.0f);
-    glRotatef(s_angle * 0.7f, 0.0f, 1.0f, 0.3f);
-    draw_cube();
+static int on_open(ArContext *ctx, HWND canvas, void *offer)
+{
+    HINSTANCE hi = self_instance();
+    WNDCLASSA wc;
+    RECT rc;
+    (void)ctx; (void)offer;
 
-    SwapBuffers(s_gldc);
+    /* Register our child window class once (ignore "already registered"). */
+    ZeroMemory(&wc, sizeof wc);
+    wc.style         = CS_OWNDC;                 /* stable DC — nice for GL */
+    wc.lpfnWndProc   = gl_wndproc;
+    wc.hInstance     = hi;
+    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    wc.lpszClassName = GL_CLASS;
+    RegisterClassA(&wc);
+
+    if (!canvas || !GetClientRect(canvas, &rc)) return 1;   /* nonzero = decline */
+
+    /* Create the child window on this (host) thread so the host's message pump
+     * services it; the render thread only draws into it. */
+    s_glwnd = CreateWindowExA(0, GL_CLASS, "", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+                              0, 0, rc.right, rc.bottom, canvas, NULL, hi, NULL);
+    if (!s_glwnd) return 1;
+
+    s_run = 1;
+    s_thread = CreateThread(NULL, 0, render_thread, canvas, 0, NULL);
+    if (!s_thread) { s_run = 0; DestroyWindow(s_glwnd); s_glwnd = 0; return 1; }
+
+    ar_print("glcube: OpenGL render thread is up. Drag to rotate.");
+    return 0;
 }
 
 static void on_close(ArContext *ctx)
 {
     (void)ctx;
-    wglMakeCurrent(NULL, NULL);
-    if (s_glrc)  { wglDeleteContext(s_glrc); s_glrc = 0; }
-    if (s_gldc)  { ReleaseDC(s_glwnd, s_gldc); s_gldc = 0; }
-    if (s_glwnd) { DestroyWindow(s_glwnd); s_glwnd = 0; }
+    s_run = 0;
+    if (s_thread) { WaitForSingleObject(s_thread, 2000); CloseHandle(s_thread); s_thread = 0; }
+    if (s_glwnd)  { DestroyWindow(s_glwnd); s_glwnd = 0; }
 }
 
 void ArcadiaToyRegister(ArToy *toy)
 {
     toy->name  = "glcube";
     toy->open  = on_open;
-    toy->tick  = on_tick;
     toy->close = on_close;
-    /* No paint callback: rendering is done in tick() via SwapBuffers, so the
-     * SDK's GDI double-buffer never runs and can't fight our GL window. */
+    /* No tick and no paint: rendering runs on our own thread (see header), so
+     * the host tick's periodic hitch can't stutter the animation, and the SDK's
+     * GDI double-buffer never runs to fight our GL window. */
 }
