@@ -5,6 +5,8 @@ Build and run your own **toys** (mini-game plugins) for Synthetic Reality's
 downloadable toys (synPool, synChess, Empyrion, synSpace, …) and was never
 opened up for third-party development.
 
+![](docs/screenshot.png)
+
 Arcadia loads each toy as a 32-bit DLL that exports six `MP*` functions and
 talks to the host through a single dispatch callback. This SDK gives you:
 
