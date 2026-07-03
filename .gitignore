@@ -1,0 +1,30 @@
+# Build output
+/build/
+build/
+*.o
+*.obj
+*.a
+*.dll
+*.exe
+
+# RE tooling virtualenv and caches
+re/.venv/
+__pycache__/
+*.pyc
+
+# Host-derived RE evidence (strings/disassembly of Arcadia.exe). Regenerate
+# locally with re/tools/ against your own copy — see docs/ABI.md §6.
+re/out/
+
+# Copyrighted game material must never be committed
+*.zip
+Arcadia.exe
+SRNet.dll
+Sr3d.dll
+
+# Editor/OS cruft
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

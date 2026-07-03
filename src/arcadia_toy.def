@@ -1,0 +1,9 @@
+; Exports Arcadia's loader resolves by name (GetProcAddress). Undecorated,
+; __cdecl. Order/ordinals are irrelevant to the host but kept stable here.
+EXPORTS
+    MPCloseOffer
+    MPIncomingPacket
+    MPNegotiationRequired
+    MPOpenOffer
+    MPRegisterCallback
+    MPSendGEDMessage
