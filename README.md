@@ -169,6 +169,13 @@ Verified recipe (see `docs/ABI.md` §3.1 for the full writeup):
 4. Load your toy in both. `ar_send()` payloads now round-trip through each
    peer's `packet()` callback. No MIX server or master server required.
 
+For a full **MIX** session instead of point-to-point (channels, the server
+browser, more than two players), see the bonus **`tools/mixserver`** — a small
+Go program that stands in for Synthetic Reality's whole MIX backend (master +
+game servers + `synreal.ini`) on your own machine. Patch each client's
+`SRNet.dll` to fetch `synreal.ini` from your server and pick "Any Public MIX
+Game Server". Its README documents the reverse-engineered MIX protocol.
+
 ### Using the SDK from another project (FetchContent)
 
 The SDK is designed to be vendored into your own toy repo. Pull it in and call
@@ -224,6 +231,7 @@ sdk/
   samples/glcube/           OpenGL cube in a child GL window (threaded, drag to rotate)
   docs/ABI.md               reverse-engineered binary spec
   re/                       RE tooling (capstone/pefile) + raw evidence
+  tools/mixserver/          all-in-one MIX test server (Go) for local multiplayer
 ```
 
 ## How the ABI was recovered
