@@ -301,8 +301,10 @@ net meter. This exercises the full `ar_send`(0x0f) → wire codec →
 The MIX-server path (vs. direct P2P) additionally requires a MIX **master**
 server for discovery — a lone game server does not answer the client's
 server-list query, and the generic TELNET transport does not sustain the MIX
-protocol. For LAN/loopback testing, the direct "Wait For Call" path above is
-the simplest route.
+protocol. That backend protocol (server browser + transport) is fully
+documented in **§3.3**; a working stand-in master + game server is provided in
+`tools/mixserver`. For a quick LAN/loopback test the direct "Wait For Call"
+path above is still the simplest route.
 
 ### 3.2 GED payload wire codec (verified)
 
@@ -321,6 +323,90 @@ It is a lossless RLE+escape codec: **every byte 0x00–0xFF round-trips**, so
 byte plus the terminator (the `len*3+2` buffer is a safe over-allocation);
 repeated bytes compress. A verified reference implementation with a fuzz
 self-test lives in `sdk/re/tools/ged_codec.py`.
+
+### 3.3 MIX backend protocol — server browser & transport (verified)
+
+Everything above (`ar_send`, `serialize`, GED events) is the **toy ↔ host**
+layer. Underneath it, when a player uses **Multiplayer → "Any Public MIX Game
+Server"**, the host's `SRNet.dll` speaks the Synthetic Reality **MIX** protocol
+to find and join a game. A toy never sees any of this — it's documented here
+because it's what a private/self-hosted server must implement, and because the
+public master no longer serves Arcadia. Recovered from `SRNet.dll` (client side)
+and the community **ReMix** game server (server side), and confirmed against a
+captured live master response. A complete stand-in (HTTP + master + game relay
+in one process) is `tools/mixserver`; **verified live** — multiple Arcadia
+clients connect through the whole chain below and relay `ar_send` packets.
+
+Four stages, on per-game ports **WoS 23999 / W97 22999 / TOY (Arcadia) 21999 /
+RC 20999**:
+
+**(1) Find the master — `synreal.ini` over HTTP.** The client GETs
+`http://<host>/synreal.ini` (the URL is a literal string in `SRNet.dll` at file
+offset `0x307a8`; patch it in place — same length or NUL-pad — to redirect the
+client) and reads `[<GAME>] master=<ip>:<port>`. The address is parsed with
+`inet_addr`, which **does not resolve hostnames** — it must be a dotted IPv4
+(`127.0.0.1`, never `localhost`), or no query is ever sent. Sections: `[WoS]`,
+`[W97]`, `[TOY]`, `[RC]`. The file is fetched via a raw socket (no WinINet);
+reply HTTP/1.0 with an explicit `Content-Length` and `Connection: close`.
+
+**(2) Get the server list — UDP query/response** on the game's port. Client →
+master, an ASCII datagram (no game field — the master keys on the port):
+
+```
+?alias=<>,name=<>,email=<>,loc=<>,sernum=<hex>,HHMM=<>,d=<hex>,v=<hex>,w=<hex>.
+```
+
+Master → client, a little-endian binary blob (`SRNet` validates magic `0x0202`
+and a minimum length of 12, then parses via two induction pointers over one
+record array — IP from `record+0`, port from `record+4`):
+
+| offset | size | field |
+|--------|------|-------|
+| 0 | 2 | magic `0x0202` |
+| 2 | 2 | version (shown as `ver %X`) |
+| 4 | 2 | **count** — number of records |
+| 6 | 2 | **recSize** = `0x0C`; records start at this offset |
+| 8 | 4 | master dword (cosmetic) |
+| `0x0C + i*0x0C` | 12 | record *i* (below) |
+
+Each 12-byte record: `[0:4]` IP (network byte order, for `inet_ntoa`), `[4:6]`
+port (uint16 LE), `[6:8]` zero, `[8:10]` population, `[10:12]` `0x0024` flags.
+The record IP must be the address **this** client can reach the server at
+(loopback for a local client, the LAN IP for a remote one) — a hardcoded
+`127.0.0.1` tells a remote client to ping its own loopback.
+
+**(3) Ping each listed server — UDP** at its `IP:port`. The client sends its
+identity with a leading opcode byte and the server answers:
+
+| client → server | server → client |
+|-----------------|-----------------|
+| `P<identity…>` | `#name=<name> //Rules: <rules> //ID:<id> //TM:<hextime> //US:<usage>` (populates the browser row) |
+| `Q` / `R` | user list |
+| `G` | (sets the server's game-info string) |
+
+(A real game server also *registers* with the master by sending
+`!version=…,nump=…,gameid=…,game=…,host=…,id=…,port=…,info=…,name=…` and gets
+back an `M`+`{int opcode, uint32 pubIP, int pubPort}` STUN-style ack. A
+self-advertising stand-in like `tools/mixserver` skips registration.)
+
+**(4) Play — TCP game session** on the same port, **newline-delimited (`\r\n`)**
+text packets. Read one packet per terminator and dispatch **immediately** — do
+not peek ahead for a paired `\r\n`, or every packet is held back until the next
+one arrives. Two families:
+
+* **`:MIX<n>…` control** — set the target for the *next* `:SR` packet, or
+  register: `:MIX1<ser>` set your scene host, `:MIX0<ser>` target a scene,
+  `:MIX4<ser>` target a player, `:MIX3<ser>` attune, `:MIX8/9` server-stored
+  variables.
+* **`:SR…` game data** — `:SR?<ser>` requests a header slot; the server replies
+  `:SR!<serHex(8)><slotHex(2)><lastSerHex(8)>`. Every other `:SR` packet is
+  relayed to the target set by the preceding `:MIX` (default: **all** other
+  players; `PLAYER` → matching sernum; `SCENE` → matching sernum/scene-host).
+  Server greeting is `:SR@M<text>`, rules `:SR$<rules>`.
+
+So the toy's `ar_send`/`serialize` bytes ride inside `:SR` packets that the MIX
+server fan-outs to the channel; the server browser, pings, and slot handshake
+are pure infrastructure the toy never sees.
 
 ## 4. Rendering & input model
 
