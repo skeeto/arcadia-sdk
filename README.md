@@ -42,9 +42,7 @@ No MFC and no Arcadia import library are needed — a toy is plain C.
 Build the SDK and the sample toy:
 
 ```sh
-cd sdk
-cmake -B build -G Ninja \
-      -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-i686-w64-mingw32.cmake
+cmake -B build
 cmake --build build
 ```
 
@@ -219,7 +217,7 @@ or `cmake --install build --prefix <ArcadiaDir>` (drops toys under `Toys/`).
 ## Repository layout
 
 ```
-sdk/
+/
   include/arcadia/toy.h     public C API
   src/arcadia_toy.c         SDK runtime (the six exports + wrappers)
   src/arcadia_toy.def       export list
