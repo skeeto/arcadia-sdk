@@ -42,13 +42,21 @@ var games = []Game{
 // verbose logs every inbound packet; invaluable while tuning the wire format.
 const verbose = true
 
+// greeting, if non-empty, is sent as a :SR@M admin message when a client joins.
+// Empty by default — the client shows it in a pop-up dialog you'd have to
+// dismiss on every join.
+const greeting = ""
+
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	go serveHTTP()
 	for _, g := range games {
 		g := g
-		go serveUDP(g)
-		go serveTCP(g)
+		// One relay per game, shared so the UDP master can report the live
+		// connected-client count as the server's population.
+		r := &relay{clients: map[*client]bool{}, nextSer: 0x1000}
+		go serveUDP(g, r)
+		go serveTCP(g, r)
 	}
 	log.Printf("mixserver up: HTTP :80, master/game ports %v", func() []int {
 		p := []int{}
@@ -148,7 +156,7 @@ func toDottedIPv4(host string) string {
 // UDP: master server-list query + P/Q/R server pings, on the game's port.
 // ---------------------------------------------------------------------------
 
-func serveUDP(g Game) {
+func serveUDP(g Game, r *relay) {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: g.Port})
 	if err != nil {
 		log.Printf("[%s] UDP listen %d failed: %v", g.Tag, g.Port, err)
@@ -172,7 +180,7 @@ func serveUDP(g Game) {
 			// Advertise ourselves at the IP that routes to THIS client: loopback
 			// for local clients, our LAN IP for remote ones. A hardcoded
 			// 127.0.0.1 would tell a remote client to ping its own loopback.
-			resp = masterList(g, localIPFor(raddr))
+			resp = masterList(g, localIPFor(raddr), r.count())
 		}
 		if resp != nil {
 			conn.WriteToUDP(resp, raddr)
@@ -183,16 +191,6 @@ func serveUDP(g Game) {
 	}
 }
 
-// masterList builds the master's server-list response.
-//
-// Layout recovered from SRNet.dll parser (validates magic 0x0202, len>=12):
-//   [0:2]  magic  0x0202
-//   [2:4]  version (cosmetic "ver %X")
-//   [4:6]  count   (number of server records)
-//   [6:8]  strideB (offset/stride of record array "B")
-//   [8:12] cosmetic
-//   [0x10:] record array "A", 12 bytes/record, IP dword at +0
-// The exact record field layout (port/pop/id + array B) is being tuned live.
 // masterList builds the master's server-list response, exactly matching the
 // wire format captured from the live community master:
 //
@@ -208,9 +206,14 @@ func serveUDP(g Game) {
 //     [6:8]  0
 //     [8:10] population (uint16)
 //     [10:12] 0x0024 (per-record flags/version constant)
-func masterList(g Game, ip net.IP) []byte {
+func masterList(g Game, ip net.IP, pop int) []byte {
 	const rec = 0x0C
 	count := 1
+	if pop < 0 {
+		pop = 0
+	} else if pop > 0xffff {
+		pop = 0xffff
+	}
 	buf := make([]byte, rec+count*rec)
 	binary.LittleEndian.PutUint16(buf[0:], 0x0202)        // magic
 	binary.LittleEndian.PutUint16(buf[2:], 0xa124)        // version
@@ -220,7 +223,7 @@ func masterList(g Game, ip net.IP) []byte {
 	r := buf[rec:]        // record 0
 	copy(r[0:4], ip.To4())                               // IP (network byte order)
 	binary.LittleEndian.PutUint16(r[4:], uint16(g.Port)) // port
-	binary.LittleEndian.PutUint16(r[8:], 0)              // population
+	binary.LittleEndian.PutUint16(r[8:], uint16(pop))    // population = connected clients
 	binary.LittleEndian.PutUint16(r[10:], 0x0024)        // flags/version
 	return buf
 }
@@ -285,13 +288,19 @@ type relay struct {
 	nextSer int
 }
 
-func serveTCP(g Game) {
+// count returns the number of currently connected clients.
+func (r *relay) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.clients)
+}
+
+func serveTCP(g Game, r *relay) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", g.Port))
 	if err != nil {
 		log.Printf("[%s] TCP listen %d failed: %v", g.Tag, g.Port, err)
 		return
 	}
-	r := &relay{clients: map[*client]bool{}, nextSer: 0x1000}
 	log.Printf("[%s] TCP game relay on :%d", g.Tag, g.Port)
 	for {
 		c, err := ln.Accept()
@@ -312,8 +321,11 @@ func (r *relay) handle(g Game, conn net.Conn) {
 	r.mu.Unlock()
 	log.Printf("[%s tcp] connect %s (assigned sernum %08X, %d online)", g.Tag, conn.RemoteAddr(), cl.sernum, n)
 
-	// Greeting.
-	writePkt(conn, fmt.Sprintf(":SR@Mwelcome to the mixserver test server (%s)", g.Name))
+	// Optional admin greeting — off by default; the client shows it as a pop-up
+	// dialog that has to be dismissed on every join.
+	if greeting != "" {
+		writePkt(conn, ":SR@M"+greeting)
+	}
 
 	defer func() {
 		r.mu.Lock()
