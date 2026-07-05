@@ -81,11 +81,24 @@ function(add_arcadia_toy target)
         set(AT_STAGE_DIR "${CMAKE_BINARY_DIR}/toys/${AT_FOLDER}")
     endif()
 
-    # The toy DLL: your sources + the SDK runtime + the export list.
+    # The toy DLL: your sources + the SDK runtime + the export list. Sources may
+    # be C or C++ — arcadia/toy.h is wrapped in extern "C", so a C++ toy's
+    # ArcadiaToyRegister() and its ar_* references keep C linkage. (Enable the
+    # CXX language in your project() to build .cpp toys.)
     add_library(${target} SHARED ${AT_SOURCES})
     target_link_libraries(${target} PRIVATE arcadia_toy_runtime)
     target_include_directories(${target} PRIVATE "${ARCADIA_SDK_INCLUDE_DIR}")
     target_link_libraries(${target} PRIVATE gdi32 user32 winmm)
+
+    # Keep C++ toys self-contained: static-link libstdc++/libgcc so the DLL has
+    # no external runtime-DLL dependency. w32devkit links these statically
+    # already; MSYS2 and other mingw default to dynamic libstdc++, which would
+    # force shipping libstdc++-6.dll alongside the toy. Harmless no-op for a
+    # pure-C toy. (MSVC: set CMAKE_MSVC_RUNTIME_LIBRARY to "MultiThreaded" in
+    # your project for a redist-free DLL.)
+    if(NOT MSVC)
+        target_link_options(${target} PRIVATE -static-libgcc -static-libstdc++)
+    endif()
 
     # Output must be named exactly as toy.ini dll= (no "lib" prefix, .dll suffix).
     get_filename_component(_dllbase "${AT_DLL}" NAME_WE)

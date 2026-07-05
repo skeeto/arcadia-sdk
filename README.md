@@ -115,6 +115,14 @@ add_arcadia_toy(mytoy
 )
 ```
 
+**C or C++.** `arcadia/toy.h` is wrapped in `extern "C"`, so a toy can be C or
+C++ — your `ArcadiaToyRegister()` and `ar_*` calls keep C linkage either way.
+For a C++ toy, enable the language (`project(mytoy C CXX)` or
+`enable_language(CXX)`) and list `.cpp` files in `SOURCES`. `add_arcadia_toy()`
+static-links the C++ runtime, so the toy DLL stays self-contained (no
+`libstdc++-6.dll` to ship) — verified: a C++/STL toy built with w32devkit
+imports only system DLLs.
+
 ### The callback model (`ArToy`)
 
 | Callback        | Fires on                            | Notes |
