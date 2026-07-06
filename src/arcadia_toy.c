@@ -265,6 +265,16 @@ int ar_mouse(int *x, int *y)
     return buttons;
 }
 
+BOOL ar_has_focus(void)
+{
+    /* TRUE when Arcadia's top-level window is the active/foreground window.
+     * ar_key_down/ar_mouse read global input state, so a game toy should gate
+     * them on this to avoid reacting to input meant for another application. */
+    HWND fg = GetForegroundWindow();
+    return fg != NULL && g_ctx.hwnd != NULL &&
+           fg == GetAncestor(g_ctx.hwnd, GA_ROOT);
+}
+
 /* ------------------------------------------------------------------ *
  *  The six exports (see arcadia_toy.def)
  * ------------------------------------------------------------------ */

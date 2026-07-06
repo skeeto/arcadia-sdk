@@ -192,12 +192,21 @@ void ar_mark_time(void);                                         /* sel 0x4a  [V
  *   ar_key_down: TRUE if virtual-key `vk` is currently down.
  *   ar_mouse:    writes the cursor position in canvas client coords through
  *                x/y (either may be NULL) and returns a bitmask of
- *                AR_MOUSE_L/AR_MOUSE_R/AR_MOUSE_M buttons currently pressed. */
+ *                AR_MOUSE_L/AR_MOUSE_R/AR_MOUSE_M buttons currently pressed.
+ *
+ * NOTE: these read GLOBAL input (GetAsyncKeyState / GetCursorPos), so they
+ * report keys and mouse even when Arcadia is NOT the active window. A game toy
+ * almost always wants to ignore input unless it has focus — gate on
+ * ar_has_focus(), which is TRUE only when Arcadia's top-level window is the
+ * foreground window:
+ *
+ *     if (ar_has_focus()) { int b = ar_mouse(&x, &y); ... } */
 #define AR_MOUSE_L 1
 #define AR_MOUSE_R 2
 #define AR_MOUSE_M 4
 BOOL ar_key_down(int vk);
 int  ar_mouse(int *x, int *y);
+BOOL ar_has_focus(void);
 
 #ifdef __cplusplus
 }

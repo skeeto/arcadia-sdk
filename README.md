@@ -142,8 +142,9 @@ Everything else is a normal function you can call anytime the session is open:
 `ar_play_music`/`ar_stop_sounds` (audio), `ar_local_player_id`,
 `ar_get_player_info`, `ar_store_read/write`, `ar_reg_get/set`, the
 `ar_surface_*` family (create/load/fill/save/blit/pixels), `ar_key_down`,
-`ar_mouse`, and the raw `ar_host(selector, …)`. See `include/arcadia/toy.h`
-and `docs/ABI.md`.
+`ar_mouse`, `ar_has_focus` (gate input polling on it — `ar_key_down`/`ar_mouse`
+read global state and fire even when Arcadia isn't the active window), and the
+raw `ar_host(selector, …)`. See `include/arcadia/toy.h` and `docs/ABI.md`.
 
 **Text & fonts.** There's no text helper by design — draw with GDI on the paint
 DC. You can use Arcadia's own faces for free: the host registers `Castellar`

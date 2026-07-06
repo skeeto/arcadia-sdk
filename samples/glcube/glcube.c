@@ -28,7 +28,9 @@
  * messages. So our topmost child GL window does NOT intercept input: dragging
  * with the left button rotates the cube even though the GL window is the window
  * physically under the cursor. Polling is also thread-agnostic, so we sample it
- * straight from the render thread.
+ * straight from the render thread. Because that polling is global, we only act
+ * on it when ar_has_focus() (Arcadia is the foreground window); otherwise a toy
+ * keeps grabbing the mouse/keys while you work in another application.
  */
 #include <arcadia/toy.h>
 #include <GL/gl.h>
@@ -134,9 +136,11 @@ static DWORD WINAPI render_thread(LPVOID param)
             set_viewport(w, h);
         }
 
-        /* Drag with the left button to rotate; idle-spin otherwise. This reads
-         * the mouse straight through the GL overlay via polling (see header). */
-        buttons = ar_mouse(&mx, &my);
+        /* Drag with the left button to rotate; idle-spin otherwise. ar_mouse()
+         * reads GLOBAL input, so only act on it while Arcadia is the foreground
+         * app (ar_has_focus) — otherwise the cube would keep responding to the
+         * mouse while you're working in another window. */
+        buttons = ar_has_focus() ? ar_mouse(&mx, &my) : 0;
         if (buttons & AR_MOUSE_L) {
             if (dragging) { yaw += (mx - lastx) * 0.4f; pitch += (my - lasty) * 0.4f; }
             dragging = 1; lastx = mx; lasty = my;
