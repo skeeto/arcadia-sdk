@@ -223,6 +223,21 @@ install_arcadia_toy_to(mytoy "C:/path/to/Arcadia")
 
 or `cmake --install build --prefix <ArcadiaDir>` (drops toys under `Toys/`).
 
+### Packaging a release
+
+`add_arcadia_toy()` also defines a `<target>_package` target that bundles the
+staged toy into a ready-to-publish `toy<N>.zip`:
+
+```sh
+cmake --build build --target mytoy_package   # -> build/toy13.zip
+```
+
+The archive is a standard ZIP (built with `cmake -E tar`, no external tool
+needed) containing a single top-level `toy<N>/` folder, so whoever downloads it
+unzips it straight into their `Arcadia/Toys/` directory. (Arcadia's own
+downloader reads standard `PK\x03\x04` zips; the manual-install layout is the
+practical route today since the official toy-download server is defunct.)
+
 ## Repository layout
 
 ```

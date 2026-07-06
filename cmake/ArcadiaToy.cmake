@@ -173,6 +173,24 @@ function(add_arcadia_toy target)
     # `cmake --install` (or `make install`) drops the toy under
     # <prefix>/Toys/toy<N>/ ready to copy into an Arcadia install.
     install(DIRECTORY "${AT_STAGE_DIR}/" DESTINATION "Toys/${AT_FOLDER}")
+
+    # ---- ready-to-publish zip -------------------------------------------
+    #   cmake --build <build> --target <target>_package   ->   <build>/toy<N>.zip
+    # Bundles the staged toy<N>/ folder into a standard ZIP (Arcadia's own
+    # SRNZipExtract reads PK\x03\x04 archives) with a single top-level toy<N>/
+    # directory, so a user unzips it straight into their Arcadia\Toys\ folder.
+    # Built with cmake -E tar (bundled libarchive) so no external zip tool is
+    # needed. A per-toy custom target rather than CPack, which is project-global
+    # and packages the install tree — it can't easily emit a precisely-named
+    # toy<N>.zip with this exact layout.
+    get_filename_component(_toys_dir "${AT_STAGE_DIR}" DIRECTORY)
+    add_custom_target(${target}_package
+        COMMAND ${CMAKE_COMMAND} -E tar cf
+                "${CMAKE_BINARY_DIR}/${AT_FOLDER}.zip" --format=zip "${AT_FOLDER}"
+        WORKING_DIRECTORY "${_toys_dir}"
+        COMMENT "Packaging ${AT_FOLDER}.zip (unzip into Arcadia\\Toys\\)"
+        VERBATIM)
+    add_dependencies(${target}_package ${target})
 endfunction()
 
 # install_arcadia_toy_to(<target> <ArcadiaDir>)
