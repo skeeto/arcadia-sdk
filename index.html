@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soul Generator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #e0e0e0;
+  }
+
+  .card {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+    width: 340px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    letter-spacing: 0.05em;
+    background: linear-gradient(90deg, #a78bfa, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+    margin-bottom: 0.4rem;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    background: rgba(0,0,0,0.3);
+    color: #f0f0f0;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus {
+    border-color: #a78bfa;
+  }
+
+  input[type="text"]::placeholder {
+    color: #666;
+  }
+
+  button {
+    display: block;
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.7rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #7c3aed, #3b82f6);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.98); }
+
+  .output-group {
+    margin-top: 1.2rem;
+  }
+
+  .output-group label {
+    color: #a5b4fc;
+  }
+
+  .output-field {
+    width: 100%;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    background: rgba(0,0,0,0.25);
+    color: #34d399;
+    font-size: 0.95rem;
+    font-family: 'Courier New', monospace;
+    min-height: 2.4rem;
+  }
+
+  .output-field.subcode {
+    color: #fbbf24;
+  }
+
+  .spacer { height: 0.6rem; }
+
+  .error {
+    color: #f87171;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-top: 0.8rem;
+    min-height: 1.2rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Soul Generator</h1>
+
+  <label for="soulNum">Soul #</label>
+  <input type="text" id="soulNum" placeholder="Enter soul number…" inputmode="numeric" pattern="[0-9]*">
+
+  <button id="submitBtn">Generate</button>
+
+  <div class="spacer"></div>
+
+  <div class="output-group">
+    <label for="outputSoul">Result</label>
+    <input type="text" id="outputSoul" class="output-field" readonly value="">
+  </div>
+
+  <div class="output-group">
+    <label for="outputSubcode">subCode</label>
+    <input type="text" id="outputSubcode" class="output-field subcode" readonly value="">
+  </div>
+
+  <div class="error" id="error"></div>
+</div>
+
+<script>
+(async () => {
+  const wasm = "AGFzbQEAAAABBgFgAX8BfgMCAQAFAwEAAgcVAgZtZW1vcnkCAAhnZW5lcmF0ZQAADAEBCq4DAasDAQZ/QYCJBCECQQchAQNAIAFBAEgEQAJAQQAhAQNAIAFBCEYNASACQRhqIAFqLQAAIgBBMGtB/wFxQQlLDQEgAUEBaiEBIANBCmwgAGpBMGshAwwACwALBSACQRhqIAFqIAAgAEEKbiIAQQpsa0EwcjoAACABQQFrIQEMAQsLQQAhASACQRBqQZgJKAAANgIAIAJBkAkpAAA3AwgCfwNAIAFBCEYEQAJAQYAIQbAIQeAIIANB5BlIGyADQYgOSBshBEHnowMhAEEAIQEDQCABQQxGBEAgA0HjGUwNAiAAQQFrQf////8HcUEBaiIAQRB2QYCABHIMBQUgBCgCACEGAn8gACACQQhqIAFqLQAAQf8AcSIFbCAAcyAFIAF0aiIAQQBOBEAgAEHkAHAMAQtBAEEAIABrQeQAcGsLIQUgBEEEaiEEIAFBAWohASAAIAUgBmprIQAMAQsACwALBSABIAJqQQxqIAJBGGogAWotAAA6AAAgAUEBaiEBDAELCyAAQf////8HcUGv/gNwIQBBAAsiAUH//wNxrSAAQRB0rSABQRB2rUIghoSECwucAQEAQYAIC5QBCwAAABEAAAADAAAAZQAAAAcAAAA4AQAADAAAAA0AAAATAAAAFwAAAA8AAAAbAAAACwAAABEAAAADAAAAZQAAADQAAAALAAAAYQAAACEAAAARAAAAZwAAACkAAABNAAAAVwAAAB8AAAAGAAAALAAAADQAAAALAAAAWAAAAC8AAAARAAAACwAAACkAAABeAAAAU09VTAA4CXByb2R1Y2VycwEMcHJvY2Vzc2VkLWJ5AQxVYnVudHUgY2xhbmcRMjEuMS44ICg2dWJ1bnR1MSkAaw90YXJnZXRfZmVhdHVyZXMGKw9tdXRhYmxlLWdsb2JhbHMrE25vbnRyYXBwaW5nLWZwdG9pbnQrC2J1bGstbWVtb3J5KwhzaWduLWV4dCsPcmVmZXJlbmNlLXR5cGVzKwptdWx0aXZhbHVl";
+
+  const bytes = Uint8Array.from(atob(wasm), c => c.charCodeAt(0));
+  const mod = await WebAssembly.instantiate(bytes);
+  const generate = mod.instance.exports.generate;
+
+  const numInput   = document.getElementById('soulNum');
+  const submitBtn  = document.getElementById('submitBtn');
+  const outSoul    = document.getElementById('outputSoul');
+  const outSubcode = document.getElementById('outputSubcode');
+  const errDiv     = document.getElementById('error');
+
+  function generateSoul() {
+    errDiv.textContent = '';
+    outSoul.value = '';
+    outSubcode.value = '';
+
+    const raw = numInput.value.trim();
+    if (!/^\d+$/.test(raw)) {
+      errDiv.textContent = 'Please enter a valid integer.';
+      return;
+    }
+
+    const n = BigInt(raw);
+
+    const result = generate(Number(n));
+
+    // Pack: bits 0-15 = subcode, bits 16-31 = checksum, bit 32 = has_subcode
+    const subcode   = Number(result & 0xFFFFn);
+    const checksum  = Number((result >> 16n) & 0xFFFFn);
+    const hasSubcode = Number((result >> 32n) & 1n);
+
+    const soulStr = `SOUL${String(n).padStart(8, '0')}${checksum.toString(16).padStart(4, '0').toUpperCase()}`;
+    outSoul.value = soulStr;
+
+    if (hasSubcode) {
+      outSubcode.value = subcode.toString(16).padStart(4, '0').toUpperCase();
+    } else {
+      outSubcode.value = '—';
+    }
+  }
+
+  submitBtn.addEventListener('click', generateSoul);
+  numInput.addEventListener('keydown', e => { if (e.key === 'Enter') generateSoul(); });
+})();
+</script>
+</body>
+</html>
